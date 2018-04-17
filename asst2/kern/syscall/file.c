@@ -15,7 +15,53 @@
 #include <syscall.h>
 #include <copyinout.h>
 
-/*
- * Add your file-related functions here ...
- */
+int open(const userptr_t filename, int flags, mode_t mode)
+{
+    (void) filename;
+    (void) flags;
+    (void) mode;
+    kprintf("opening\n");
+    return 1;
+}
 
+ssize_t read(int fd, userptr_t buf, size_t buflen)
+{
+    (void) fd;
+    (void) buf;
+    (void) buflen;
+    kprintf("reading\n");
+    return 1;
+}
+
+ssize_t write(int fd, const userptr_t buf, size_t nbytes)
+{
+    (void) fd;
+    (void) buf;
+    (void) nbytes;
+    kprintf("writing\n");
+    return 1;
+}
+
+off_t lseek(int fd, off_t pos, int whence)
+{
+    (void) fd;
+    (void) pos;
+    (void) whence;
+    kprintf("lseeking\n");
+    return 1;
+}
+
+int close(int fd)
+{
+    (void) fd;
+    kprintf("closing\n");
+    return 1;
+}
+
+int dup2(int oldfd, int newfd)
+{
+    (void) oldfd;
+    (void) newfd;
+    kprintf("dup2ing\n");
+    return 1;
+}
