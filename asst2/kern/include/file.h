@@ -23,7 +23,7 @@ struct file_table
     struct file *opened_files[OPEN_MAX];
 };
 
-int open(const userptr_t filename, int flags, mode_t mode);
+int open(const userptr_t filename, int flags, mode_t mode, int *fd);
 ssize_t read(int fd, userptr_t buf, size_t buflen);
 ssize_t write(int fd, const userptr_t buf, size_t nbytes);
 off_t lseek(int fd, off_t pos, int whence);

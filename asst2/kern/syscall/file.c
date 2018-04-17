@@ -15,11 +15,12 @@
 #include <syscall.h>
 #include <copyinout.h>
 
-int open(const userptr_t filename, int flags, mode_t mode)
+int open(const userptr_t filename, int flags, mode_t mode, int *fd)
 {
     (void) filename;
     (void) flags;
     (void) mode;
+    (void) fd;
     kprintf("opening\n");
     return 1;
 }
