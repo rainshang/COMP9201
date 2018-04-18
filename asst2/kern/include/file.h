@@ -13,8 +13,9 @@
 
 struct file
 {
+    int f_flag;
+    off_t f_offset;
     struct vnode *f_vnode;
-    struct stat *f_stat;
     struct lock *f_lock;
 };
 

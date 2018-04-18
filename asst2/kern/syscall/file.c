@@ -32,21 +32,14 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
         return ENOMEM;
     }
 
+    file->f_flag = flags;
+    file->f_offset = 0;
     file->f_vnode = vnode;
-
-    file->f_stat = kmalloc(sizeof(struct stat));
-    if (!file->f_stat)
-    {
-        vfs_close(vnode);
-        kfree(file);
-        return ENOMEM;
-    }
 
     file->f_lock = lock_create("f_lock");
     if (!file->f_lock)
     {
         vfs_close(vnode);
-        kfree(file->f_stat);
         kfree(file);
         return ENOMEM;
     }
@@ -66,7 +59,6 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
     if (*fd == -1)
     {
         vfs_close(vnode);
-        kfree(file->f_stat);
         lock_release(file->f_lock);
         kfree(file);
         return EMFILE;
@@ -139,7 +131,6 @@ int sys_close(int fd)
     if (file)
     {
         lock_acquire(file->f_lock);
-        kfree(file->f_stat);
         vfs_close(file->f_vnode); //don't know whether need to kfree this vnode. I reckon not
         lock_release(file->f_lock);
         lock_destroy(file->f_lock);
