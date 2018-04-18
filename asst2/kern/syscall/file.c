@@ -101,11 +101,46 @@ ssize_t sys_read(int fd, userptr_t buf, size_t buflen)
 
 ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes)
 {
-    (void)fd;
-    (void)buf;
-    (void)nbytes;
-    kprintf("DDDDDebug-----sys_write------delete this when implemented\n");
-    return 0;
+   struct uio u_io;
+   struct iovec u_iovec;
+   struct file *file;
+   //*ret = -1;
+
+   if (fd < 0 || fd >= OPEN_MAX){
+     return EBADF;
+   }
+
+   lock_acquire(curproc->f_table->ft_lock);
+   file = curproc->f_table->opened_files[fd];
+   lock_release(curproc->f_table->ft_lock);
+
+   if (file == NULL){
+     return EBADF;
+   }
+
+   lock_acquire(file->f_lock);
+
+   u_iovec.iov_ubase = (userptr_t)buf;
+	 u_iovec.iov_len = nbytes;
+	 u_io.uio_iov = &u_iovec;
+	 u_io.uio_iovcnt = 1;
+	 u_io.uio_offset = file->f_offset;
+	 u_io.uio_resid = nbytes;
+	 u_io.uio_segflg = UIO_USERSPACE;
+	 u_io.uio_rw = UIO_WRITE;
+	 u_io.uio_space = curproc->p_addrspace;
+
+   int err = VOP_WRITE(file->f_vnode, &u_io);
+   if (err){
+     lock_release(file->f_lock);
+		 return err;
+   }
+   //*(size_t*) ret = u_io.uio_offset - file->f_offset;
+   file->f_offset += nbytes;
+   lock_release(file->f_lock);
+
+   return 0;
+
 }
 
 off_t sys_lseek(int fd, off_t pos, int whence)
