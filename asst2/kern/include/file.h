@@ -21,6 +21,7 @@ struct file
 struct file_table
 {
     struct file *opened_files[OPEN_MAX];
+    struct lock *ft_lock;
 };
 
 int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd);

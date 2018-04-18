@@ -41,6 +41,8 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
         return ENOMEM;
     }
 
+    lock_acquire(curproc->f_table->ft_lock);
+    *fd = -1;
     for (unsigned i = 0; i < OPEN_MAX; ++i)
     {
         if (!curproc->f_table->opened_files[i])
@@ -49,6 +51,14 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
             *fd = i;
             break;
         }
+    }
+    lock_release(curproc->f_table->ft_lock);
+    if (*fd == -1)
+    {
+        vfs_close(vnode);
+        lock_release(file->f_lock);
+        kfree(file);
+        return EMFILE;
     }
     return 0;
 }
@@ -133,13 +143,19 @@ int init_process_file_table(struct proc *proc)
     {
         proc->f_table->opened_files[i] = NULL;
     }
+    proc->f_table->ft_lock = lock_create("ft_lock");
+    if (!proc->f_table->ft_lock)
+    {
+        kfree(proc->f_table);
+        return ENOMEM;
+    }
 
     // create fds for standard input (stdin), standard output (stdout), and standard error (stderr)
     char console_device[5];
     for (unsigned i = 0; i < 3; ++i)
     {
-        int fd = i; // fd should equal to i
-        strcpy(console_device, "con:");
+        int fd = i;                     // fd should equal to i
+        strcpy(console_device, "con:"); // vfs_open() could alter the value of console_device...
         int err = _sys_open(console_device, O_RDWR, 0, &fd);
         if (err)
         {
