@@ -14,55 +14,138 @@
 #include <file.h>
 #include <syscall.h>
 #include <copyinout.h>
+#include <proc.h>
 
-int open(const userptr_t filename, int flags, mode_t mode, int *fd)
+static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
 {
-    (void) filename;
-    (void) flags;
-    (void) mode;
-    (void) fd;
-    kprintf("opening\n");
-    return 1;
+    struct vnode *vnode = NULL;
+    int err = vfs_open(sys_filename, flags, mode, &vnode);
+    if (err)
+    {
+        return err;
+    }
+
+    struct file *file = kmalloc(sizeof(struct file));
+    if (!file)
+    {
+        vfs_close(vnode);
+        return ENOMEM;
+    }
+
+    file->f_vnode = vnode;
+    file->f_lock = lock_create("f_lock");
+    if (!file->f_lock)
+    {
+        vfs_close(vnode);
+        kfree(file);
+        return ENOMEM;
+    }
+
+    for (unsigned i = 0; i < OPEN_MAX; ++i)
+    {
+        if (!curproc->f_table->opened_files[i])
+        {
+            curproc->f_table->opened_files[i] = file;
+            *fd = i;
+            break;
+        }
+    }
+    return 0;
 }
 
-ssize_t read(int fd, userptr_t buf, size_t buflen)
+int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
 {
-    (void) fd;
-    (void) buf;
-    (void) buflen;
+    // copy data from user space to system space
+    char *sys_filename = kmalloc(PATH_MAX);
+    if (!sys_filename)
+    {
+        return ENOMEM;
+    }
+    size_t len_sys_filename = 0;
+    int err = copyinstr(filename, sys_filename, PATH_MAX - 1, &len_sys_filename);
+    if (err)
+    {
+        return err;
+    }
+    kprintf("opening new file \"%s\"\n", sys_filename);
+
+    err = _sys_open(sys_filename, flags, mode, fd);
+    if (err)
+    {
+        return err;
+    }
+
+    kprintf("open() got fd %d\n", *fd);
+    return 0;
+}
+
+ssize_t sys_read(int fd, userptr_t buf, size_t buflen)
+{
+    (void)fd;
+    (void)buf;
+    (void)buflen;
     kprintf("reading\n");
     return 1;
 }
 
-ssize_t write(int fd, const userptr_t buf, size_t nbytes)
+ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes)
 {
-    (void) fd;
-    (void) buf;
-    (void) nbytes;
+    (void)fd;
+    (void)buf;
+    (void)nbytes;
     kprintf("writing\n");
     return 1;
 }
 
-off_t lseek(int fd, off_t pos, int whence)
+off_t sys_lseek(int fd, off_t pos, int whence)
 {
-    (void) fd;
-    (void) pos;
-    (void) whence;
+    (void)fd;
+    (void)pos;
+    (void)whence;
     kprintf("lseeking\n");
     return 1;
 }
 
-int close(int fd)
+int sys_close(int fd)
 {
-    (void) fd;
+    (void)fd;
     kprintf("closing\n");
     return 1;
 }
 
-int dup2(int oldfd, int newfd)
+int sys_dup2(int oldfd, int newfd)
 {
-    (void) oldfd;
-    (void) newfd;
+    (void)oldfd;
+    (void)newfd;
     kprintf("dup2ing\n");
     return 1;
+}
+
+int init_process_file_table(struct proc *proc)
+{
+    proc->f_table = kmalloc(sizeof(struct file_table));
+    if (!proc->f_table)
+    {
+        return ENOMEM;
+    }
+
+    for (unsigned i = 0; i < OPEN_MAX; ++i)
+    {
+        proc->f_table->opened_files[i] = NULL;
+    }
+
+    // create fds for standard input (stdin), standard output (stdout), and standard error (stderr)
+    char console_device[5];
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        int fd = i; // fd should equal to i
+        strcpy(console_device, "con:");
+        int err = _sys_open(console_device, O_RDWR, 0, &fd);
+        if (err)
+        {
+            return err;
+        }
+    }
+
+    return 0;
 }

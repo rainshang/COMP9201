@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <file.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -78,6 +79,9 @@ runprogram(char *progname)
 	/* Switch to it and activate it. */
 	proc_setas(as);
 	as_activate();
+
+	/* Init the file table of this new process */
+	init_process_file_table(curproc);
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
