@@ -13,8 +13,8 @@
 
 struct file
 {
-    char f_mode;
     struct vnode *f_vnode;
+    struct stat *f_stat;
     struct lock *f_lock;
 };
 

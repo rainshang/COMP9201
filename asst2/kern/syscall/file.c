@@ -33,10 +33,20 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
     }
 
     file->f_vnode = vnode;
+
+    file->f_stat = kmalloc(sizeof(struct stat));
+    if (!file->f_stat)
+    {
+        vfs_close(vnode);
+        kfree(file);
+        return ENOMEM;
+    }
+
     file->f_lock = lock_create("f_lock");
     if (!file->f_lock)
     {
         vfs_close(vnode);
+        kfree(file->f_stat);
         kfree(file);
         return ENOMEM;
     }
@@ -56,6 +66,7 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
     if (*fd == -1)
     {
         vfs_close(vnode);
+        kfree(file->f_stat);
         lock_release(file->f_lock);
         kfree(file);
         return EMFILE;
@@ -124,13 +135,15 @@ int sys_close(int fd)
 
     int err;
     lock_acquire(curproc->f_table->ft_lock);
-    if (curproc->f_table->opened_files[fd])
+    struct file *file = curproc->f_table->opened_files[fd];
+    if (file)
     {
-        lock_acquire(curproc->f_table->opened_files[fd]->f_lock);
-        vfs_close(curproc->f_table->opened_files[fd]->f_vnode); //don't know whether need to kfree this vnode. I reckon not
-        lock_release(curproc->f_table->opened_files[fd]->f_lock);
-        lock_destroy(curproc->f_table->opened_files[fd]->f_lock);
-        kfree(curproc->f_table->opened_files[fd]);
+        lock_acquire(file->f_lock);
+        kfree(file->f_stat);
+        vfs_close(file->f_vnode); //don't know whether need to kfree this vnode. I reckon not
+        lock_release(file->f_lock);
+        lock_destroy(file->f_lock);
+        kfree(file);
         curproc->f_table->opened_files[fd] = NULL;
         err = 0;
     }
