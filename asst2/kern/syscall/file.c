@@ -77,7 +77,6 @@ int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
     {
         return err;
     }
-    kprintf("opening new file \"%s\"\n", sys_filename);
 
     err = _sys_open(sys_filename, flags, mode, fd);
     if (err)
@@ -85,7 +84,6 @@ int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
         return err;
     }
 
-    kprintf("open() got fd %d\n", *fd);
     return 0;
 }
 
@@ -94,8 +92,8 @@ ssize_t sys_read(int fd, userptr_t buf, size_t buflen)
     (void)fd;
     (void)buf;
     (void)buflen;
-    kprintf("reading\n");
-    return 1;
+    kprintf("DDDDDebug-----sys_read------delete this when implemented\n");
+    return 0;
 }
 
 ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes)
@@ -103,8 +101,8 @@ ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes)
     (void)fd;
     (void)buf;
     (void)nbytes;
-    kprintf("writing\n");
-    return 1;
+    kprintf("DDDDDebug-----sys_write------delete this when implemented\n");
+    return 0;
 }
 
 off_t sys_lseek(int fd, off_t pos, int whence)
@@ -112,23 +110,45 @@ off_t sys_lseek(int fd, off_t pos, int whence)
     (void)fd;
     (void)pos;
     (void)whence;
-    kprintf("lseeking\n");
-    return 1;
+    kprintf("DDDDDebug-----sys_lseek------delete this when implemented\n");
+    return 0;
 }
 
 int sys_close(int fd)
 {
-    (void)fd;
-    kprintf("closing\n");
-    return 1;
+    // out of range
+    if (fd < 0 || fd >= OPEN_MAX)
+    {
+        return EBADF;
+    }
+
+    int err;
+    lock_acquire(curproc->f_table->ft_lock);
+    if (curproc->f_table->opened_files[fd])
+    {
+        lock_acquire(curproc->f_table->opened_files[fd]->f_lock);
+        vfs_close(curproc->f_table->opened_files[fd]->f_vnode); //don't know whether need to kfree this vnode. I reckon not
+        lock_release(curproc->f_table->opened_files[fd]->f_lock);
+        lock_destroy(curproc->f_table->opened_files[fd]->f_lock);
+        kfree(curproc->f_table->opened_files[fd]);
+        curproc->f_table->opened_files[fd] = NULL;
+        err = 0;
+    }
+    else // not open
+    {
+        err = ENXIO;
+    }
+    lock_release(curproc->f_table->ft_lock);
+
+    return err;
 }
 
 int sys_dup2(int oldfd, int newfd)
 {
     (void)oldfd;
     (void)newfd;
-    kprintf("dup2ing\n");
-    return 1;
+    kprintf("DDDDDebug-----sys_dup2------delete this when implemented\n");
+    return 0;
 }
 
 int init_process_file_table(struct proc *proc)
