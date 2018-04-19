@@ -36,6 +36,7 @@
 #include <current.h>
 #include <syscall.h>
 #include <file.h>
+#include <copyinout.h>
 
 /*
  * System call dispatcher.
@@ -75,11 +76,12 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
-void
-syscall(struct trapframe *tf)
+void syscall(struct trapframe *tf)
 {
 	int callno;
+	bool is_ret_64;
 	int32_t retval;
+	int64_t retvall;
 	int err;
 
 	KASSERT(curthread != NULL);
@@ -97,74 +99,102 @@ syscall(struct trapframe *tf)
 	 * like write.
 	 */
 
+	is_ret_64 = false;
 	retval = 0;
+	retvall = 0;
 
-	switch (callno) {
-	    case SYS_reboot:
+	switch (callno)
+	{
+	case SYS_reboot:
 		err = sys_reboot(tf->tf_a0);
 		break;
 
-	    case SYS___time:
+	case SYS___time:
 		err = sys___time((userptr_t)tf->tf_a0,
-				 (userptr_t)tf->tf_a1);
+						 (userptr_t)tf->tf_a1);
 		break;
 
-		case SYS_open:
+	case SYS_open:
 		err = sys_open((userptr_t)tf->tf_a0,
-					(int)tf->tf_a1,
-					(mode_t)tf->tf_a2,
-					&retval);// retval is file descriptor
+					   (int)tf->tf_a1,
+					   (mode_t)tf->tf_a2,
+					   &retval); // retval is file descriptor
 		break;
 
-		case SYS_read:
+	case SYS_read:
 		err = sys_read((int)tf->tf_a0,
-					(userptr_t)tf->tf_a1,
-					(size_t)tf->tf_a1,
-				   &retval);
+					   (userptr_t)tf->tf_a1,
+					   (size_t)tf->tf_a1,
+					   &retval);
 		break;
 
-		case SYS_write:
+	case SYS_write:
 		err = sys_write((int)tf->tf_a0,
-					(userptr_t)tf->tf_a1,
-					(size_t)tf->tf_a2,
-					&retval);
+						(userptr_t)tf->tf_a1,
+						(size_t)tf->tf_a2,
+						&retval);
 		break;
 
-		case SYS_lseek:
-		err = sys_lseek((int)tf->tf_a0,
-					(off_t)tf->tf_a1,
-					(int)tf->tf_a2);
-		break;
+	case SYS_lseek:
+	{
+		int whence; // read from user-level stack
+		err = copyin((const_userptr_t)(tf->tf_sp + 16), &whence, sizeof(whence));
 
-		case SYS_close:
+		if (!err)
+		{
+			char off_t_bytes[sizeof(off_t)];
+			// beacuse _BYTE_ORDER is _BIG_ENDIAN
+			memcpy(off_t_bytes, &(tf->tf_a2), sizeof(tf->tf_a2));
+			memcpy(off_t_bytes + sizeof(tf->tf_a2), &(tf->tf_a3), sizeof(tf->tf_a3));
+
+			err = sys_lseek((int)tf->tf_a0,
+							*((off_t *)off_t_bytes),
+							whence,
+							&retvall);
+			is_ret_64 = true;
+		}
+	}
+	break;
+
+	case SYS_close:
 		err = sys_close((int)tf->tf_a0);
 		break;
 
-		case SYS_dup2:
+	case SYS_dup2:
 		err = sys_dup2((int)tf->tf_a0,
-					(int)tf->tf_a1);
+					   (int)tf->tf_a1);
 		break;
 
-	    default:
+	default:
 		kprintf("Unknown syscall %d\n", callno);
 		err = ENOSYS;
 		break;
 	}
 
-
-	if (err) {
+	if (err)
+	{
 		/*
 		 * Return the error code. This gets converted at
 		 * userlevel to a return value of -1 and the error
 		 * code in errno.
 		 */
 		tf->tf_v0 = err;
-		tf->tf_a3 = 1;      /* signal an error */
+		tf->tf_a3 = 1; /* signal an error */
 	}
-	else {
+	else
+	{
 		/* Success. */
-		tf->tf_v0 = retval;
-		tf->tf_a3 = 0;      /* signal no error */
+		if (is_ret_64)
+		{
+			// beacuse _BYTE_ORDER is _BIG_ENDIAN
+			memcpy(&(tf->tf_v0), &retvall, sizeof(tf->tf_v0));
+			memcpy(&(tf->tf_v1), &retvall + sizeof(tf->tf_v0), sizeof(tf->tf_v1));
+		}
+		else
+		{
+			tf->tf_v0 = retval;
+		}
+		tf->tf_a3 = 0; /* signal no error */
 	}
 
 	/*
@@ -188,8 +218,7 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
-void
-enter_forked_process(struct trapframe *tf)
+void enter_forked_process(struct trapframe *tf)
 {
 	(void)tf;
 }
