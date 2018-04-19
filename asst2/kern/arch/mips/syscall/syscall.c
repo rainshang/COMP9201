@@ -37,6 +37,7 @@
 #include <syscall.h>
 #include <file.h>
 #include <copyinout.h>
+#include <endian.h>
 
 /*
  * System call dispatcher.
@@ -76,9 +77,6 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
-
-extern void join32to64(uint32_t x1, uint32_t x2, uint64_t *y2);
-extern void split64to32(uint64_t x, uint32_t *y1, uint32_t *y2);
 
 void syscall(struct trapframe *tf)
 {

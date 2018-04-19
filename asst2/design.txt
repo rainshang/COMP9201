@@ -1,0 +1,38 @@
+-asst2-src
+    -kern
+        -arch
+            -mips
+                -syscall
+                    -syscall.c
+        -include
+            -file.h
+            -proc.h
+        -syscall
+            -file.c
+            -runprogram.c
+
+Above is the file structure of our modification for assignment2.
+
+After the code walk-through, we've learned that OS/161 has already impelements the vfs layer, in which a vnode is implemented to manipulate the lower layer, such as the blocks, the hardwares etc.
+
+AS we understanding, when user level programs call file operating functions, for example, 'int open(const char *filename, int flags, ...)' and 'ssize_t read(int filehandle, void *buf, size_t size)', descripted in 
+-asst2-src
+    -build
+        -install
+            -include
+                -unistd.h
+,
+it will triger interrupts and coming into kernel level, specifically, calling 'void syscall(struct trapframe *tf)' in 'syscall.c' demenstrated at the very beginning.
+Thus, here is the basic idea of how to start this task.
+
+1. We add more file operating system call case in the switch block. Every case number strictly matches the user level file functions.
+
+2. In each case, we call the kernel level file functions, which are descripted in 'file.h' and implemented in 'file.c'. Which should be noticed is all the arguments and return values are accessed directly as a assembly-register mode, so we need to handle the scenario in which types may consist of more than one register, such as a 64-bit number. Specifically, in the case of 'SYS_lseek', we join and split the data type.
+
+3. In 'file.h' we define 'struct file', relating to the file descriptor stuff. We also define 'struct file_table' which presents the files opened. The file descriptor is actually the index of a file in this table.
+
+4. As we all know, process is the unit to maintain the resources programs need. So we put the file_table in 'struct proc', which is defined in 'proc.h'.
+
+5. Naturally, we've tried to initialise the file_table in 'struct proc *proc_create_runprogram(const char *name)', which is the function to create a new process. However, initialising here will block the system from booting up. Then the 'runprogram.c' enlightened us. Kernel uses this function to create a new process space and switch to this new process when running every new use level program. So we initialise the file_table in a process here. Particularly, we open first three file for stdin(0), stdout(1) and stderr(2). This means normally a file descriptor returned by file open fucntion in any process should be not less than 3.
+
+6. There is not too much worth to be mentioned in the implement in 'file.c', because more fussy jobs have been abstracted and encapsulated by 'struct vnode', thus, all the file munipulation are actually munipulating vnode by calling the macroes defined in 'vnode.h'. Of course to ensure opertaions atomic, we import locks in struct and file_table.
