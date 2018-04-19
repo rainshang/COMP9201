@@ -76,6 +76,10 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
+
+extern void join32to64(uint32_t x1, uint32_t x2, uint64_t *y2);
+extern void split64to32(uint64_t x, uint32_t *y1, uint32_t *y2);
+
 void syscall(struct trapframe *tf)
 {
 	int callno;
@@ -142,13 +146,11 @@ void syscall(struct trapframe *tf)
 
 		if (!err)
 		{
-			char off_t_bytes[sizeof(off_t)];
-			// beacuse _BYTE_ORDER is _BIG_ENDIAN
-			memcpy(off_t_bytes, &(tf->tf_a2), sizeof(tf->tf_a2));
-			memcpy(off_t_bytes + sizeof(tf->tf_a2), &(tf->tf_a3), sizeof(tf->tf_a3));
+			off_t pos;
+			join32to64(tf->tf_a2, tf->tf_a3, (uint64_t *)&pos);
 
 			err = sys_lseek((int)tf->tf_a0,
-							*((off_t *)off_t_bytes),
+							pos,
 							whence,
 							&retvall);
 			is_ret_64 = true;
@@ -186,9 +188,7 @@ void syscall(struct trapframe *tf)
 		/* Success. */
 		if (is_ret_64)
 		{
-			// beacuse _BYTE_ORDER is _BIG_ENDIAN
-			memcpy(&(tf->tf_v0), &retvall, sizeof(tf->tf_v0));
-			memcpy(&(tf->tf_v1), &retvall + sizeof(tf->tf_v0), sizeof(tf->tf_v1));
+			split64to32(retvall, &tf->tf_v0, &tf->tf_v1);
 		}
 		else
 		{
