@@ -26,7 +26,7 @@ struct file_table
 };
 
 int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd);
-ssize_t sys_read(int fd, userptr_t buf, size_t buflen);
+ssize_t sys_read(int fd, userptr_t buf, size_t buflen, int *ret);
 ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes, int *ret);
 off_t sys_lseek(int fd, off_t pos, int whence);
 int sys_close(int fd);

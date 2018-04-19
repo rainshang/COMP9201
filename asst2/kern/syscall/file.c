@@ -90,13 +90,53 @@ int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
     return 0;
 }
 
-ssize_t sys_read(int fd, userptr_t buf, size_t buflen)
+ssize_t sys_read(int fd, userptr_t buf, size_t buflen, int *ret)
 {
-    (void)fd;
-    (void)buf;
-    (void)buflen;
-    kprintf("DDDDDebug-----sys_read------delete this when implemented\n");
-    return 0;
+  struct uio u_io;
+  struct iovec u_iovec;
+  struct file *file;
+
+  if (fd < 0 || fd >= OPEN_MAX)
+  {
+      return EBADF;
+  }
+
+  lock_acquire(curproc->f_table->ft_lock);
+  file = curproc->f_table->opened_files[fd];
+  lock_release(curproc->f_table->ft_lock);
+
+  if (file == NULL)
+  {
+      return EBADF;
+  }
+  if ((file->f_flag & O_ACCMODE) == O_WRONLY)
+  {
+      return EBADF;
+  }
+  lock_acquire(file->f_lock);
+  u_iovec.iov_ubase = (userptr_t)buf;
+  u_iovec.iov_len = buflen;
+  u_io.uio_iov = &u_iovec;
+  u_io.uio_iovcnt = 1;
+  u_io.uio_offset = file->f_offset;
+  u_io.uio_resid = buflen;
+  u_io.uio_segflg = UIO_USERSPACE;
+  u_io.uio_rw = UIO_READ;
+  u_io.uio_space = curproc->p_addrspace;
+
+  int err = VOP_READ(file->f_vnode, &u_io);
+  if (err)
+  {
+      lock_release(file->f_lock);
+      *ret = -1;
+      return err;
+  }
+  *ret = u_io.uio_offset - file->f_offset;
+  file->f_offset = u_io.uio_offset;
+  lock_release(file->f_lock);
+
+  return 0;
+
 }
 
 ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes, int *ret)
@@ -115,6 +155,10 @@ ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes, int *ret)
     lock_release(curproc->f_table->ft_lock);
 
     if (file == NULL)
+    {
+        return EBADF;
+    }
+    if ((file->f_flag & O_ACCMODE) == O_RDONLY)
     {
         return EBADF;
     }
@@ -138,8 +182,8 @@ ssize_t sys_write(int fd, const_userptr_t buf, size_t nbytes, int *ret)
         *ret = -1;
         return err;
     }
-    *ret = nbytes;
-    file->f_offset += nbytes;
+    *ret = u_io.uio_offset - file->f_offset;
+    file->f_offset = u_io.uio_offset;
     lock_release(file->f_lock);
 
     return 0;
