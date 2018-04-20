@@ -28,8 +28,10 @@ static int _update_offset_with_filesize(struct file *file)
     return err;
 }
 
-static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
+static int _sys_open(char *sys_filename, int flags, mode_t mode, int *ret)
 {
+    *ret = -1;
+
     struct vnode *vnode = NULL;
     int err = vfs_open(sys_filename, flags, mode, &vnode);
     if (err)
@@ -46,6 +48,7 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
 
     file->f_flag = flags;
     file->f_vnode = vnode;
+    file->f_ref_count = 1;
     if (flags & O_APPEND)
     {
         err = _update_offset_with_filesize(file);
@@ -70,18 +73,17 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
     }
 
     lock_acquire(curproc->f_table->ft_lock);
-    *fd = -1;
     for (unsigned i = 0; i < OPEN_MAX; ++i)
     {
         if (!curproc->f_table->opened_files[i])
         {
             curproc->f_table->opened_files[i] = file;
-            *fd = i;
+            *ret = i;
             break;
         }
     }
     lock_release(curproc->f_table->ft_lock);
-    if (*fd == -1)
+    if (*ret == -1)
     {
         vfs_close(vnode);
         lock_release(file->f_lock);
@@ -91,8 +93,10 @@ static int _sys_open(char *sys_filename, int flags, mode_t mode, int *fd)
     return 0;
 }
 
-int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
+int sys_open(const_userptr_t filename, int flags, mode_t mode, int *ret)
 {
+    *ret = -1;
+
     // copy data from user space to system space
     char *sys_filename = kmalloc(PATH_MAX);
     if (!sys_filename)
@@ -106,17 +110,13 @@ int sys_open(const_userptr_t filename, int flags, mode_t mode, int *fd)
         return err;
     }
 
-    err = _sys_open(sys_filename, flags, mode, fd);
-    if (err)
-    {
-        return err;
-    }
-
-    return 0;
+    return _sys_open(sys_filename, flags, mode, ret);
 }
 
 int sys_read(int fd, userptr_t buf, size_t buflen, ssize_t *ret)
 {
+    *ret = -1;
+
     struct uio u_io;
     struct iovec u_iovec;
     struct file *file;
@@ -153,7 +153,6 @@ int sys_read(int fd, userptr_t buf, size_t buflen, ssize_t *ret)
     if (err)
     {
         lock_release(file->f_lock);
-        *ret = -1;
         return err;
     }
     *ret = u_io.uio_offset - file->f_offset;
@@ -165,6 +164,8 @@ int sys_read(int fd, userptr_t buf, size_t buflen, ssize_t *ret)
 
 int sys_write(int fd, const_userptr_t buf, size_t nbytes, ssize_t *ret)
 {
+    *ret = -1;
+
     struct uio u_io;
     struct iovec u_iovec;
     struct file *file;
@@ -203,7 +204,6 @@ int sys_write(int fd, const_userptr_t buf, size_t nbytes, ssize_t *ret)
     if (err)
     {
         lock_release(file->f_lock);
-        *ret = -1;
         return err;
     }
     *ret = u_io.uio_offset - file->f_offset;
@@ -215,6 +215,8 @@ int sys_write(int fd, const_userptr_t buf, size_t nbytes, ssize_t *ret)
 
 int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
 {
+    *ret = -1;
+
     // out of range
     if (fd < 0 || fd >= OPEN_MAX)
     {
@@ -246,6 +248,7 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
                 else
                 {
                     file->f_offset = pos;
+                    *ret = file->f_offset;
                 }
                 break;
             case SEEK_CUR:
@@ -256,6 +259,7 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
                 else
                 {
                     file->f_offset += pos;
+                    *ret = file->f_offset;
                 }
                 break;
             case SEEK_END:
@@ -269,6 +273,7 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
                     else
                     {
                         file->f_offset += pos;
+                        *ret = file->f_offset;
                     }
                 }
                 break;
@@ -278,7 +283,6 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
         {
             err = ESPIPE;
         }
-        *ret = file->f_offset;
         lock_release(file->f_lock);
     }
     else // not opened
@@ -288,8 +292,10 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *ret)
     return err;
 }
 
-int sys_close(int fd)
+int sys_close(int fd, int *ret)
 {
+    *ret = -1;
+
     // out of range
     if (fd < 0 || fd >= OPEN_MAX)
     {
@@ -302,11 +308,20 @@ int sys_close(int fd)
     if (file)
     {
         lock_acquire(file->f_lock);
-        vfs_close(file->f_vnode); //don't know whether need to kfree this vnode. I reckon not
-        lock_release(file->f_lock);
-        lock_destroy(file->f_lock);
-        kfree(file);
+        if (file->f_ref_count == 1) // only itself
+        {
+            vfs_close(file->f_vnode); //don't know whether need to kfree this vnode. I reckon not
+            lock_release(file->f_lock);
+            lock_destroy(file->f_lock);
+            kfree(file);
+        }
+        else // some dup exits
+        {
+            file->f_ref_count--;
+            lock_release(file->f_lock);
+        }
         curproc->f_table->opened_files[fd] = NULL;
+        *ret = 0;
         err = 0;
     }
     else // not opened
@@ -314,16 +329,52 @@ int sys_close(int fd)
         err = EBADF;
     }
     lock_release(curproc->f_table->ft_lock);
-
     return err;
 }
 
-int sys_dup2(int oldfd, int newfd)
+int sys_dup2(int oldfd, int newfd, int *ret)
 {
-    (void)oldfd;
-    (void)newfd;
-    kprintf("DDDDDebug-----sys_dup2------delete this when implemented\n");
-    return 0;
+    *ret = -1;
+
+    // out of range
+    if (oldfd < 0 || oldfd >= OPEN_MAX || newfd < 0 || newfd >= OPEN_MAX)
+    {
+        return EBADF;
+    }
+
+    int err = 0;
+    lock_acquire(curproc->f_table->ft_lock);
+    struct file *file = curproc->f_table->opened_files[oldfd];
+    if (file)
+    {
+        if (oldfd == newfd)
+        {
+            *ret = newfd;
+            err = 0;
+        }
+        else
+        {
+            struct file *new_file = curproc->f_table->opened_files[newfd];
+            if (new_file)
+            {
+                err = sys_close(newfd, ret);
+            }
+            if (!err)
+            {
+                lock_acquire(file->f_lock);
+                file->f_ref_count++;
+                lock_release(file->f_lock);
+                curproc->f_table->opened_files[newfd] = file;
+                *ret = newfd;
+            }
+        }
+    }
+    else // oldret not opened
+    {
+        err = EBADF;
+    }
+    lock_release(curproc->f_table->ft_lock);
+    return err;
 }
 
 int init_process_file_table(struct proc *proc)
