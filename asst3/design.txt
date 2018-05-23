@@ -1,1 +1,23 @@
-Place your design document here.
+--frame table
+    When we tracked the called path to attempt to get some idea of
+    how exactly page table is established we found kmalloc() calls
+    alloc_kpages() to get n free pages.  So we think, we can create
+    the frame table for phycial address and convert next n free
+    frames address to page address (vaddr) here.
+
+--hashed page table
+    We create a hashed page table which size is twice of frame
+    table.  When we want to insert a PTE into the HPT, we use the
+    pid (address_space*) and the vaddr to hash a index in HPT check
+    the this position.
+
+    if vacant, put it here.
+
+    if not, hash pte_here.pid and pte_here.vaddr to get a new index,
+    save the index as a link.  Then check the next index as prior,
+    recursively. Thus, we'll soon get a vacant to put the new pte.
+
+--TLB
+    When the TLB misses, an interrupt occours, which leads to call the vm_fault().
+    After checking the faulttype, we use the same hash method to get the index in HPT(of course the same hash collision solution).
+    Use the pte at this postion to update TLB
