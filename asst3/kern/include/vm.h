@@ -30,12 +30,13 @@
 #ifndef _VM_H_
 #define _VM_H_
 
-/*
- * VM system-related definitions.
- *
- * You'll probably want to add stuff here.
- */
-
+struct page_table_entry
+{
+    paddr_t frame_addr;
+    vaddr_t page_addr;
+    struct addrspace* pid;
+    unsigned next_hash_index;
+};
 
 #include <machine/vm.h>
 

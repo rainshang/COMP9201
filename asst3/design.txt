@@ -7,17 +7,87 @@
 
 --hashed page table
     We create a hashed page table which size is twice of frame
-    table.  When we want to insert a PTE into the HPT, we use the
-    pid (address_space*) and the vaddr to hash a index in HPT check
-    the this position.
+    table.
+
+    When we want to insert a PTE into the HPT, we use the pid
+    (address_space*) and the vaddr to hash a index in HPT check the
+    this position.
 
     if vacant, put it here.
 
-    if not, hash pte_here.pid and pte_here.vaddr to get a new index,
-    save the index as a link.  Then check the next index as prior,
-    recursively. Thus, we'll soon get a vacant to put the new pte.
+    if not, we use h = (h + di) % size to generate a new index, di
+    increases in [1, size-1].
+        If possible, save the index as a link.  Otherwise, it means
+        there if no space.
+
+    When we want to find a PTE in the HPT, we use the same hash
+    method to get the index, if the pte at this position mathes the
+    pid, cool
+
+    not, we check the next link of this pte to match, until match
+    or not found
 
 --TLB
-    When the TLB misses, an interrupt occours, which leads to call the vm_fault().
-    After checking the faulttype, we use the same hash method to get the index in HPT(of course the same hash collision solution).
-    Use the pte at this postion to update TLB
+    When the TLB misses, an interrupt occours, which leads to call
+    the vm_fault().
+
+    After checking the faulttype, we use the same hash method to
+    get the index in HPT.
+192-168-1-15:assignment Ethan$ fmt asst3/design.txt
+--frame table
+    When we tracked the called path to attempt to get some idea of
+    how exactly page table is established we found kmalloc() calls
+    alloc_kpages() to get n free pages.  So we think, we can create
+    the frame table for phycial address and convert next n free
+    frames address to page address (vaddr) here.
+
+--hashed page table
+    We create a hashed page table which size is twice of frame
+    table.
+
+    When we want to insert a PTE into the HPT, we use the pid
+    (address_space*) and the vaddr to hash a index in HPT check the
+    this position.
+
+    if vacant, put it here.
+
+    if not, we use h = (h + di) % size to generate a new index, di
+    increases in [1, size-1].
+        If possible, save the index as a link.  Otherwise, it means
+        there if no space.
+
+    When we want to find a PTE in the HPT, we use the same hash
+    method to get the index, if the pte at this position mathes the
+    pid, cool
+
+    not, we check the next link of this pte to match, until match
+    or not found
+
+--TLB
+    When the TLB misses, an interrupt occours, which leads to call
+    the vm_fault().
+
+    After checking the faulttype, we use the same hash method to
+    get the index in HPT.
+
+    Found, use the pte at this postion to update TLB.
+
+    Not found, check whether the address is with any region.
+
+    Yes, insert a new PTE into HPT.  No, fail
+
+--Address Space
+    --Region
+        We define a struct 'region' to describe different regions
+        in the address space of one process.
+
+        When one process is created, runprogram() will call load_elf()
+        to define a new region by calling as_define_region().
+
+        For stack, data and code regions, this function will be
+        called to create their own regions sometime. Particularly,
+        the statck pointer points to its bottom while others point
+        to top. Thus, we need a as_define_stack() func to distinguish.
+
+        We define 'region' as a linklist, to present all the specific
+        regions in this process space.
