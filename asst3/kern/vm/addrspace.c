@@ -51,23 +51,12 @@
 struct addrspace *
 as_create(void)
 {
-	struct addrspace *as;
-
-	as = kmalloc(sizeof(struct addrspace));
+	struct addrspace *as = kmalloc(sizeof(struct addrspace));
 	if (as == NULL)
 	{
 		return NULL;
 	}
-	as->as_regions = kmalloc(sizeof(struct addrspace));
-	if (as->as_regions == NULL)
-	{
-		kfree(as);
-		return NULL;
-	}
-	as->as_regions->start_page = 0;
-	as->as_regions->count_page = 0;
-	as->as_regions->permission = 0;
-	as->as_regions->next_region = NULL;
+	as->as_regions = NULL;
 
 	return as;
 }
@@ -82,23 +71,23 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-  struct region *old_temp = old->as_regions;
+	struct region *old_temp = old->as_regions;
 
-  while (old_temp != NULL){
-      as_define_region(newas, old_temp->start_page, old_temp->count_page,
-        old_temp->permission & PERMISSION_READ, old_temp->permission & PERMISSION_WRITE,
-        old_temp->permission & PERMISSION_EXECUTE);
+	while (old_temp != NULL)
+	{
+		as_define_region(newas, old_temp->start_page, old_temp->count_page,
+						 old_temp->permission & PERMISSION_READ, old_temp->permission & PERMISSION_WRITE,
+						 old_temp->permission & PERMISSION_EXECUTE);
 
-      old_temp = old_temp->next_region;
-      
-  }
-
-
-
-	(void)old;
-
+		old_temp = old_temp->next_region;
+	}
 	*ret = newas;
-	return 0;
+	int err = vm_copy(old, newas);
+	if (err)
+	{
+		as_destroy(newas);
+	}
+	return err;
 }
 
 void as_destroy(struct addrspace *as)
