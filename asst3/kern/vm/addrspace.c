@@ -82,9 +82,18 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-	/*
-         * Write this.
-         */
+  struct region *old_temp = old->as_regions;
+
+  while (old_temp != NULL){
+      as_define_region(newas, old_temp->start_page, old_temp->count_page,
+        old_temp->permission & PERMISSION_READ, old_temp->permission & PERMISSION_WRITE,
+        old_temp->permission & PERMISSION_EXECUTE);
+
+      old_temp = old_temp->next_region;
+      
+  }
+
+
 
 	(void)old;
 
