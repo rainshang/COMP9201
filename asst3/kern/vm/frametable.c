@@ -109,6 +109,7 @@ void free_kpages(vaddr_t addr)
       if (frame_table[temp].isUsed == 0){
         return;
       }
+      free_kpage(addr);
       spinlock_acquire(&stealmem_lock);
       frame_table[temp].isUsed = 0;
       frame_table[temp].next_empty_entry = first_empty_entry;

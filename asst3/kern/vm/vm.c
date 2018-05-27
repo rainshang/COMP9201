@@ -38,6 +38,7 @@ static void init_page_table()
 
 void vm_bootstrap(void)
 {
+	init_frametable();
 	init_page_table();
 }
 
