@@ -169,7 +169,7 @@ int as_prepare_load(struct addrspace *as)
 	struct region *regions = as->as_regions;
 	while (regions != NULL)
 	{
-		regions->permission = regions->permission | PERMISSION_WRITE;
+		regions->permission = PERMISSION_WRITE;
 		regions = regions->next_region;
 	}
 	return 0;
@@ -180,7 +180,7 @@ int as_complete_load(struct addrspace *as)
 	struct region *regions = as->as_regions;
 	while (regions != NULL)
 	{
-		regions->permission = regions->permission | PERMISSION_READ;
+		regions->permission = PERMISSION_READ;
 		regions = regions->next_region;
 	}
 	return 0;
