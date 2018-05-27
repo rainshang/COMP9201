@@ -12,9 +12,6 @@ static unsigned hpt_size;
 
 void init_page_table()
 {
-	struct spinlock spinlock = SPINLOCK_INITIALIZER;
-	spinlock_acquire(&spinlock);
-
 	paddr_t mm_size = ram_getsize();
 	hpt_size = mm_size / PAGE_SIZE * 2;
 	unsigned n_pages_hpt = sizeof(struct page_table_entry) * hpt_size / PAGE_SIZE;
@@ -34,8 +31,6 @@ void init_page_table()
 		pte.pid = NULL;
 		pte.next_hash_index = 0;
 	}
-
-	spinlock_release(&spinlock);
 }
 
 void vm_bootstrap(void)
@@ -43,30 +38,30 @@ void vm_bootstrap(void)
 	init_page_table();
 }
 
-uint32_t hpt_hash(struct addrspace *as, vaddr_t faultaddr)
+uint32_t hpt_hash(struct addrspace *as, vaddr_t faultvaddr)
 {
 	uint32_t index;
 
-	index = (((uint32_t)as) ^ (faultaddr >> PAGE_BITS)) % hpt_size;
+	index = (((uint32_t)as) ^ (faultvaddr >> PAGE_BITS)) % hpt_size;
 	return index;
 }
 
-vaddr_t get_page_addr(vaddr_t faultaddr)
+vaddr_t get_page_addr(vaddr_t faultvaddr)
 {
-	return faultaddr - faultaddr % PAGE_SIZE;
+	return faultvaddr - faultvaddr % PAGE_SIZE;
 }
 
-void update_tlb(vaddr_t faultaddr, paddr_t frame_addr)
+void update_tlb(vaddr_t faultvaddr, paddr_t frame_addr)
 {
 	int spl = splhigh();
-	uint32_t ehi = faultaddr & TLBHI_VPAGE;
+	uint32_t ehi = faultvaddr & TLBHI_VPAGE;
 	uint32_t elo = frame_addr | TLBLO_DIRTY | TLBLO_VALID;
 
 	tlb_random(ehi, elo);
 	splx(spl);
 }
 
-int lookup_pht(struct addrspace *as, vaddr_t faultaddr, struct page_table_entry pte)
+int lookup_pht(struct addrspace *as, vaddr_t faultvaddr, struct page_table_entry pte)
 {
 	if (pte.pid == NULL)
 	{
@@ -74,7 +69,7 @@ int lookup_pht(struct addrspace *as, vaddr_t faultaddr, struct page_table_entry 
 	}
 	else
 	{
-		if (pte.pid == as && pte.page_addr == get_page_addr(faultaddr)) // hit
+		if (pte.pid == as && pte.page_addr == get_page_addr(faultvaddr)) // hit
 		{
 			update_tlb(faultvaddr, pte.frame_addr);
 			retunr 0;
@@ -82,7 +77,7 @@ int lookup_pht(struct addrspace *as, vaddr_t faultaddr, struct page_table_entry 
 		else if (pte.next_hash_index != 0) // hash collision solution
 		{
 			struct page_table_entry next_pte = hashed_page_table[pte.next_hash_index];
-			return lookup_pht(as, faultaddress, next_pte);
+			return lookup_pht(as, faultvaddr, next_pte);
 		}
 		else // miss
 		{
@@ -91,13 +86,13 @@ int lookup_pht(struct addrspace *as, vaddr_t faultaddr, struct page_table_entry 
 	}
 }
 
-int check_regions(struct addrspace *as, vaddr_t faultaddr)
+int check_regions(struct addrspace *as, vaddr_t faultvaddr)
 {
 	struct region *cur_region = as->as_regions;
 
 	while (cur_region != NULL)
 	{
-		if (faultaddr >= cur_region->start_page && faultaddr <= cur_region->start_page + PAGE_SIZE * cur_region->count_page)
+		if (faultvaddr >= cur_region->start_page && faultvaddr <= cur_region->start_page + PAGE_SIZE * cur_region->count_page)
 		{
 			return 0;
 		}
@@ -110,7 +105,7 @@ int check_regions(struct addrspace *as, vaddr_t faultaddr)
 	return -1;
 }
 
-int alloc_frame(struct page_table_entry pte, struct addrspace *as, vaddr_t faultaddr)
+int alloc_frame(struct page_table_entry pte, struct addrspace *as, vaddr_t faultvaddr)
 {
 	vaddr_t new_frame_vaddr = alloc_kpages(1);
 	if (vaddr == 0)
@@ -119,18 +114,18 @@ int alloc_frame(struct page_table_entry pte, struct addrspace *as, vaddr_t fault
 	}
 	bzero(vaddr, PAGE_SIZE);
 	pte.frame_addr = KVADDR_TO_PADDR(new_frame_vaddr);
-	pte.page_addr = get_page_addr(faultaddr);
+	pte.page_addr = get_page_addr(faultvaddr);
 	pte.pid = as;
 	return 0;
 }
 
-int insert_pht(struct addrspace *as, vaddr_t faultaddr, uint32_t index)
+int insert_pht(struct addrspace *as, vaddr_t faultvaddr, uint32_t index)
 {
 	struct page_table_entry pte = hashed_page_table[index];
 	int err = 0;
 	if (pte.pid == NULL)
 	{
-		err = alloc_frame(pte, as, faultaddr);
+		err = alloc_frame(pte, as, faultvaddr);
 		if (err)
 		{
 			return err;
@@ -147,7 +142,7 @@ int insert_pht(struct addrspace *as, vaddr_t faultaddr, uint32_t index)
 			struct page_table_entry next_pte = hashed_page_table[new_index];
 			if (next_pte.pid == NULL)
 			{
-				err = alloc_frame(next_pte, as, faultaddr);
+				err = alloc_frame(next_pte, as, faultvaddr);
 				if (err)
 				{
 					return err;
@@ -165,7 +160,7 @@ int insert_pht(struct addrspace *as, vaddr_t faultaddr, uint32_t index)
 	}
 }
 
-int vm_fault(int faulttype, vaddr_t faultaddress)
+int vm_fault(int faulttype, vaddr_t faultvaddr)
 {
 	switch (faulttype)
 	{
@@ -187,10 +182,15 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 		return EFAULT;
 	}
 
-	uint32_t index = hpt_hash(as, faultaddress);
+	struct spinlock *spinlock = &SPINLOCK_INITIALIZER;
+	spinlock_acquire(spinlock);
+
+	uint32_t index = hpt_hash(as, faultvaddr);
 	struct page_table_entry pte = hashed_page_table[index];
 
-	int err = lookup_pht(as, faultaddress, pte);
+	int err = lookup_pht(as, faultvaddr, pte);
+
+	spinlock_release(spinlock);
 	if (err)
 	{
 		err = check_regions(as, faultvaddr);
@@ -200,7 +200,10 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		else
 		{
-			return insert_pht(as, faultvaddr, index);
+			spinlock_acquire(spinlock);
+			err = insert_pht(as, faultvaddr, index);
+			spinlock_release(spinlock);
+			return err;
 		}
 	}
 	return 0;
