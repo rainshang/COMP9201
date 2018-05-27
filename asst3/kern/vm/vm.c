@@ -61,7 +61,7 @@ void update_tlb(vaddr_t faultvaddr, paddr_t frame_addr)
 	splx(spl);
 }
 
-int lookup_pht(struct addrspace *as, vaddr_t faultvaddr, struct page_table_entry pte)
+int lookup_pht_update_tlb(struct addrspace *as, vaddr_t faultvaddr, struct page_table_entry pte)
 {
 	if (pte.pid == NULL)
 	{
@@ -77,7 +77,7 @@ int lookup_pht(struct addrspace *as, vaddr_t faultvaddr, struct page_table_entry
 		else if (pte.next_hash_index != 0) // hash collision solution
 		{
 			struct page_table_entry next_pte = hashed_page_table[pte.next_hash_index];
-			return lookup_pht(as, faultvaddr, next_pte);
+			return lookup_pht_update_tlb(as, faultvaddr, next_pte);
 		}
 		else // miss
 		{
@@ -188,7 +188,7 @@ int vm_fault(int faulttype, vaddr_t faultvaddr)
 	uint32_t index = hpt_hash(as, faultvaddr);
 	struct page_table_entry pte = hashed_page_table[index];
 
-	int err = lookup_pht(as, faultvaddr, pte);
+	int err = lookup_pht_update_tlb(as, faultvaddr, pte);
 
 	spinlock_release(spinlock);
 	if (err)
@@ -207,6 +207,48 @@ int vm_fault(int faulttype, vaddr_t faultvaddr)
 		}
 	}
 	return 0;
+}
+
+void lookup_pht_delete_page(vaddr_t page_vaddr, struct page_table_entry pte)
+{
+	if (pte.pid != NULL)
+	{
+		if (pte.next_hash_index != 0)
+		{
+			struct page_table_entry next_pte = hashed_page_table[pte.next_hash_index];
+			lookup_pht_delete_page(page_vaddr, next_pte);
+		}
+		if (pte.page_addr == page_vaddr) // hit
+		{
+			pte.frame_addr = 0;
+			pte.page_addr = 0;
+			pte.pid = NULL;
+			pte.next_hash_index = 0;
+		}
+	}
+}
+
+void free_kpage(vaddr_t page_vaddr)
+{
+	if (curproc == NULL)
+	{
+		return;
+	}
+	struct addrspace *as = proc_getas();
+	if (as == NULL)
+	{
+		return;
+	}
+
+	struct spinlock *spinlock = &SPINLOCK_INITIALIZER;
+	spinlock_acquire(spinlock);
+
+	uint32_t index = hpt_hash(as, page_vaddr);
+	struct page_table_entry pte = hashed_page_table[index];
+
+	lookup_pht_delete_page(page_vaddr, pte);
+
+	spinlock_release(spinlock);
 }
 
 /*

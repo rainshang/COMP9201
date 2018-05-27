@@ -27,41 +27,10 @@
     not, we check the next link of this pte to match, until match
     or not found
 
---TLB
-    When the TLB misses, an interrupt occours, which leads to call
-    the vm_fault().
-
-    After checking the faulttype, we use the same hash method to
-    get the index in HPT.
-192-168-1-15:assignment Ethan$ fmt asst3/design.txt
---frame table
-    When we tracked the called path to attempt to get some idea of
-    how exactly page table is established we found kmalloc() calls
-    alloc_kpages() to get n free pages.  So we think, we can create
-    the frame table for phycial address and convert next n free
-    frames address to page address (vaddr) here.
-
---hashed page table
-    We create a hashed page table which size is twice of frame
-    table.
-
-    When we want to insert a PTE into the HPT, we use the pid
-    (address_space*) and the vaddr to hash a index in HPT check the
-    this position.
-
-    if vacant, put it here.
-
-    if not, we use h = (h + di) % size to generate a new index, di
-    increases in [1, size-1].
-        If possible, save the index as a link.  Otherwise, it means
-        there if no space.
-
-    When we want to find a PTE in the HPT, we use the same hash
-    method to get the index, if the pte at this position mathes the
-    pid, cool
-
-    not, we check the next link of this pte to match, until match
-    or not found
+    Release a page.
+        --We decide to free a page table entry when free_kpages()
+        is called. Since the frame is freed ultimately, so we invalid
+        all the ptes which vaddrs are the page address.
 
 --TLB
     When the TLB misses, an interrupt occours, which leads to call
