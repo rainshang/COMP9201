@@ -51,83 +51,79 @@
 struct addrspace *
 as_create(void)
 {
-        struct addrspace *as;
+	struct addrspace *as;
 
-        as = kmalloc(sizeof(struct addrspace));
-        if (as == NULL) {
-                return NULL;
-        }
-        as->as_regions = kmalloc(sizeof(struct addrspace));
-        if (as->as_regions == NULL){
-          kfree(as);
-          return NULL;
-        }
-        as->as_regions->start_page = 0;
-        as->as_regions->count_page = 0;
-        as->as_regions->permission = 0;
-        as->as_regions->next_region = NULL;
+	as = kmalloc(sizeof(struct addrspace));
+	if (as == NULL)
+	{
+		return NULL;
+	}
+	as->as_regions = kmalloc(sizeof(struct addrspace));
+	if (as->as_regions == NULL)
+	{
+		kfree(as);
+		return NULL;
+	}
+	as->as_regions->start_page = 0;
+	as->as_regions->count_page = 0;
+	as->as_regions->permission = 0;
+	as->as_regions->next_region = NULL;
 
-        return as;
+	return as;
 }
 
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
+int as_copy(struct addrspace *old, struct addrspace **ret)
 {
-        struct addrspace *newas;
+	struct addrspace *newas;
 
-        newas = as_create();
-        if (newas==NULL) {
-                return ENOMEM;
-        }
+	newas = as_create();
+	if (newas == NULL)
+	{
+		return ENOMEM;
+	}
 
-        /*
+	/*
          * Write this.
          */
 
-        (void)old;
+	(void)old;
 
-        *ret = newas;
-        return 0;
+	*ret = newas;
+	return 0;
 }
 
-void
-as_destroy(struct addrspace *as)
+void as_destroy(struct addrspace *as)
 {
-        /*
+	/*
          * Clean up as needed.
          */
 
-        kfree(as);
+	kfree(as);
 }
 
-void
-as_activate(void)
+void as_activate(void)
 {
-      int i, spl;
-      struct addrspace *as;
-      as = proc_getas();
-      if (as == NULL) {
-          return;
-        }
-        /* Disable interrupts on this CPU while frobbing the TLB. */
-      spl = splhigh();
+	int i, spl;
+	struct addrspace *as;
+	as = proc_getas();
+	if (as == NULL)
+	{
+		return;
+	}
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
 
-      for (i=0; i<NUM_TLB; i++) {
-          tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-        }
+	for (i = 0; i < NUM_TLB; i++)
+	{
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
 
-      splx(spl);
+	splx(spl);
 }
 
-void
-as_deactivate(void)
+void as_deactivate(void)
 {
-        /*
-         * Write this. For many designs it won't need to actually do
-         * anything. See proc.c for an explanation of why it (might)
-         * be needed.
-         */
-         as_activate();
+	as_activate();
 }
 
 /*
@@ -140,62 +136,62 @@ as_deactivate(void)
  * moment, these are ignored. When you write the VM system, you may
  * want to implement them.
  */
-int
-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
-                 int readable, int writeable, int executable)
+int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
+					 int readable, int writeable, int executable)
 {
-        /*
-         * Write this.
-         */
+	struct region *new_region = kmalloc(sizeof(struct region));
+	if (!new_region)
+	{
+		return ENOMEM;
+	}
 
-        (void)as;
-        (void)vaddr;
-        (void)memsize;
-        (void)readable;
-        (void)writeable;
-        (void)executable;
-        return ENOSYS; /* Unimplemented */
+	new_region->start_page = vaddr & PAGE_FRAME;
+	new_region->count_page = (memsize + vaddr % PAGE_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+	new_region->permission = readable | writeable | executable;
+	new_region->next_region = NULL;
+
+	if (as->as_regions)
+	{
+		struct region *iterator_region = as->as_regions;
+		while (iterator_region->next_region)
+		{
+			iterator_region = iterator_region->next_region;
+		}
+		iterator_region->next_region = new_region;
+	}
+	else
+	{
+		as->as_regions = new_region;
+	}
+	return 0;
 }
 
-int
-as_prepare_load(struct addrspace *as)
+int as_prepare_load(struct addrspace *as)
 {
-        /*
-         * Write this.
-         */
-        struct region *regions = as->as_regions;
-        while(regions != NULL) {
-         regions->permission = regions->permission | PERMISSION_WRITE;
-         regions = regions->next_region;
-        }
-        return 0;
+	struct region *regions = as->as_regions;
+	while (regions != NULL)
+	{
+		regions->permission = regions->permission | PERMISSION_WRITE;
+		regions = regions->next_region;
+	}
+	return 0;
 }
 
-int
-as_complete_load(struct addrspace *as)
+int as_complete_load(struct addrspace *as)
 {
-        /*
-         * Write this.
-         */
-        struct region *regions = as->as_regions;
-        while(regions != NULL) {
-          regions->permission = regions->permission | PERMISSION_READ;
-          regions = regions->next_region;
-         }
-        return 0;
+	struct region *regions = as->as_regions;
+	while (regions != NULL)
+	{
+		regions->permission = regions->permission | PERMISSION_READ;
+		regions = regions->next_region;
+	}
+	return 0;
 }
 
-int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
+#define USER_STACKPAGES 16
+
+int as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-        /*
-         * Write this.
-         */
-
-        (void)as;
-
-        /* Initial user-level stack pointer */
-        *stackptr = USERSTACK;
-
-        return 0;
+	*stackptr = USERSTACK;
+	return as_define_region(as, USERSTACK - PAGE_SIZE * USER_STACKPAGES, PAGE_SIZE * USER_STACKPAGES, PERMISSION_READ, PERMISSION_WRITE, 0);
 }

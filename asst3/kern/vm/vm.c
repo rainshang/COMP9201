@@ -38,8 +38,8 @@ static void init_page_table()
 
 void vm_bootstrap(void)
 {
-	init_frametable();
 	init_page_table();
+	init_frametable();
 }
 
 static uint32_t hpt_hash(struct addrspace *as, vaddr_t faultvaddr)
@@ -52,7 +52,7 @@ static uint32_t hpt_hash(struct addrspace *as, vaddr_t faultvaddr)
 
 static vaddr_t get_page_addr(vaddr_t faultvaddr)
 {
-	return faultvaddr - faultvaddr % PAGE_SIZE;
+	return faultvaddr & PAGE_FRAME;
 }
 
 static void update_tlb(vaddr_t faultvaddr, paddr_t frame_addr)

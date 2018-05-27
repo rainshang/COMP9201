@@ -36,33 +36,34 @@
 
 #include <vm.h>
 #include "opt-dumbvm.h"
+#include <elf.h>
 
 struct vnode;
 
 struct region
 {
-#define PERMISSION_READ 0b100
-#define PERMISSION_WRITE 0b10
-#define PERMISSION_EXECUTE 0b1
+#define PERMISSION_READ PF_R
+#define PERMISSION_WRITE PF_W
+#define PERMISSION_EXECUTE PF_X
 
-        vaddr_t start_page;
-        size_t count_page;
-        __u8 permission;
-        struct region* next_region;
+	vaddr_t start_page;
+	size_t count_page;
+	uint32_t permission; // compatible with the PF_R/PF_W/PF_X in elf.h
+	struct region *next_region;
 };
 
 struct addrspace
 {
 #if OPT_DUMBVM
-        vaddr_t as_vbase1;
-        paddr_t as_pbase1;
-        size_t as_npages1;
-        vaddr_t as_vbase2;
-        paddr_t as_pbase2;
-        size_t as_npages2;
-        paddr_t as_stackpbase;
+	vaddr_t as_vbase1;
+	paddr_t as_pbase1;
+	size_t as_npages1;
+	vaddr_t as_vbase2;
+	paddr_t as_pbase2;
+	size_t as_npages2;
+	paddr_t as_stackpbase;
 #else
-        struct region *as_regions;
+	struct region *as_regions;
 #endif
 };
 
@@ -114,10 +115,10 @@ void as_deactivate(void);
 void as_destroy(struct addrspace *);
 
 int as_define_region(struct addrspace *as,
-                     vaddr_t vaddr, size_t sz,
-                     int readable,
-                     int writeable,
-                     int executable);
+					 vaddr_t vaddr, size_t sz,
+					 int readable,
+					 int writeable,
+					 int executable);
 int as_prepare_load(struct addrspace *as);
 int as_complete_load(struct addrspace *as);
 int as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
