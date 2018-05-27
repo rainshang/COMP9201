@@ -57,10 +57,15 @@ as_create(void)
         if (as == NULL) {
                 return NULL;
         }
-
-        /*
-         * Initialize as needed.
-         */
+        as->as_regions = kmalloc(sizeof(struct addrspace));
+        if (as->as_regions == NULL){
+          kfree(as);
+          return NULL;
+        }
+        as->as_regions->start_page = 0;
+        as->as_regions->count_page = 0;
+        as->as_regions->permission = 0;
+        as->as_regions->next_region = NULL;
 
         return as;
 }
@@ -98,20 +103,20 @@ as_destroy(struct addrspace *as)
 void
 as_activate(void)
 {
-        struct addrspace *as;
+      int i, spl;
+      struct addrspace *as;
+      as = proc_getas();
+      if (as == NULL) {
+          return;
+        }
+        /* Disable interrupts on this CPU while frobbing the TLB. */
+      spl = splhigh();
 
-        as = proc_getas();
-        if (as == NULL) {
-                /*
-                 * Kernel thread without an address space; leave the
-                 * prior address space in place.
-                 */
-                return;
+      for (i=0; i<NUM_TLB; i++) {
+          tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
         }
 
-        /*
-         * Write this.
-         */
+      splx(spl);
 }
 
 void
@@ -122,6 +127,7 @@ as_deactivate(void)
          * anything. See proc.c for an explanation of why it (might)
          * be needed.
          */
+         as_activate();
 }
 
 /*
@@ -157,8 +163,11 @@ as_prepare_load(struct addrspace *as)
         /*
          * Write this.
          */
-
-        (void)as;
+        struct region *regions = as->as_regions;
+        while(regions != NULL) {
+         regions->permission = regions->permission | PERMISSION_WRITE;
+         regions = regions->next_region;
+        }
         return 0;
 }
 
@@ -168,8 +177,11 @@ as_complete_load(struct addrspace *as)
         /*
          * Write this.
          */
-
-        (void)as;
+        struct region *regions = as->as_regions;
+        while(regions != NULL) {
+          regions->permission = regions->permission | PERMISSION_READ;
+          regions = regions->next_region;
+         }
         return 0;
 }
 
@@ -187,4 +199,3 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 
         return 0;
 }
-
