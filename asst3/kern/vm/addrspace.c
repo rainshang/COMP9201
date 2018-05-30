@@ -91,9 +91,14 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 
 void as_destroy(struct addrspace *as)
 {
-	/*
-         * Clean up as needed.
-         */
+	vm_destroy(as);
+	struct region *region = as->as_regions;
+	while (region)
+	{
+		struct region *tmp = region;
+		region = region->next_region;
+		kfree(tmp);
+	}
 
 	kfree(as);
 }

@@ -55,6 +55,7 @@ vaddr_t alloc_kpages(unsigned npages);
 void free_kpages(vaddr_t vaddr);
 struct page_table_entry *init_pagetable(size_t *page_nums);
 int vm_copy(struct addrspace *old, struct addrspace *new);
+void vm_destroy(struct addrspace *as);
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);
 

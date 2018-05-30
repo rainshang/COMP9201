@@ -227,6 +227,42 @@ int vm_copy(struct addrspace *old, struct addrspace *new)
 	return 0;
 }
 
+void vm_destroy(struct addrspace *as)
+{
+	spinlock_acquire(&hpt_lock);
+
+	for (size_t i = 0; i < page_nums; ++i)
+	{
+		struct page_table_entry *pte = &hashed_page_table[i];
+		if (pte->pid == as)
+		{
+			if (pte->next_hash)
+			{
+				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
+				if (next_pte->pid == as)
+				{
+					init_pte(pte);
+				}
+				else
+				{
+					pte->pid = next_pte->pid;
+					pte->page_vaddr = next_pte->page_vaddr;
+					pte->frame_paddr = next_pte->frame_paddr;
+					pte->next_hash = next_pte->next_hash;
+
+					init_pte(next_pte);
+				}
+			}
+			else
+			{
+				init_pte(pte);
+			}
+		}
+	}
+
+	spinlock_release(&hpt_lock);
+}
+
 /*
  *
  * SMP-specific functions.  Unused in our configuration.
