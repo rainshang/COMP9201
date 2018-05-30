@@ -72,12 +72,17 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 
 	while (old_region)
 	{
-		as_define_region(new,
-						 old_region->base_page_vaddr,
-						 PAGE_SIZE * old_region->page_nums,
-						 old_region->permission & PERMISSION_READ,
-						 old_region->permission & PERMISSION_WRITE,
-						 old_region->permission & PERMISSION_EXECUTE);
+		int err = as_define_region(new,
+								   old_region->base_page_vaddr,
+								   PAGE_SIZE * old_region->page_nums,
+								   old_region->permission & PERMISSION_READ,
+								   old_region->permission & PERMISSION_WRITE,
+								   old_region->permission & PERMISSION_EXECUTE);
+		if (err)
+		{
+			as_destroy(new);
+			return err;
+		}
 		old_region = old_region->next_region;
 	}
 	*ret = new;
