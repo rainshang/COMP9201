@@ -46,8 +46,8 @@ struct region
 #define PERMISSION_WRITE PF_W
 #define PERMISSION_EXECUTE PF_X
 
-	vaddr_t start_page;
-	size_t count_page;
+	vaddr_t base_page_vaddr; // grows up
+	size_t page_nums;
 	uint32_t permission; // compatible with the PF_R/PF_W/PF_X in elf.h
 	struct region *next_region;
 };

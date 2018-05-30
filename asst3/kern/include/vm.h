@@ -32,10 +32,10 @@
 
 struct page_table_entry
 {
-	paddr_t frame_addr;
-	vaddr_t page_addr;
 	struct addrspace *pid;
-	unsigned next_hash_index;
+	vaddr_t page_vaddr;
+	paddr_t frame_paddr;
+	unsigned next_hash;
 };
 
 #include <machine/vm.h>
@@ -47,14 +47,13 @@ struct page_table_entry
 
 /* Initialization function */
 void vm_bootstrap(void);
-void init_frametable(void);
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
 
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(unsigned npages);
-void free_kpages(vaddr_t addr);
-void free_kpage(vaddr_t page_vaddr);
+void free_kpages(vaddr_t vaddr);
+struct page_table_entry *init_pagetable(size_t *page_nums);
 int vm_copy(struct addrspace *old, struct addrspace *new);
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);

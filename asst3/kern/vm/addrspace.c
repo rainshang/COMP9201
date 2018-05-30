@@ -52,40 +52,39 @@ struct addrspace *
 as_create(void)
 {
 	struct addrspace *as = kmalloc(sizeof(struct addrspace));
-	if (as == NULL)
+	if (!as)
 	{
 		return NULL;
 	}
 	as->as_regions = NULL;
-
 	return as;
 }
 
 int as_copy(struct addrspace *old, struct addrspace **ret)
 {
-	struct addrspace *newas;
-
-	newas = as_create();
-	if (newas == NULL)
+	struct addrspace *new = as_create();
+	if (!new)
 	{
 		return ENOMEM;
 	}
 
-	struct region *old_temp = old->as_regions;
+	struct region *old_region = old->as_regions;
 
-	while (old_temp != NULL)
+	while (old_region)
 	{
-		as_define_region(newas, old_temp->start_page, old_temp->count_page,
-						 old_temp->permission & PERMISSION_READ, old_temp->permission & PERMISSION_WRITE,
-						 old_temp->permission & PERMISSION_EXECUTE);
-
-		old_temp = old_temp->next_region;
+		as_define_region(new,
+						 old_region->base_page_vaddr,
+						 PAGE_SIZE * old_region->page_nums,
+						 old_region->permission & PERMISSION_READ,
+						 old_region->permission & PERMISSION_WRITE,
+						 old_region->permission & PERMISSION_EXECUTE);
+		old_region = old_region->next_region;
 	}
-	*ret = newas;
-	int err = vm_copy(old, newas);
+	*ret = new;
+	int err = vm_copy(old, new);
 	if (err)
 	{
-		as_destroy(newas);
+		as_destroy(new);
 	}
 	return err;
 }
@@ -101,17 +100,15 @@ void as_destroy(struct addrspace *as)
 
 void as_activate(void)
 {
-	int i, spl;
-	struct addrspace *as;
-	as = proc_getas();
-	if (as == NULL)
+	struct addrspace *as = proc_getas();
+	if (!as)
 	{
 		return;
 	}
 	/* Disable interrupts on this CPU while frobbing the TLB. */
-	spl = splhigh();
+	int spl = splhigh();
 
-	for (i = 0; i < NUM_TLB; i++)
+	for (int i = 0; i < NUM_TLB; i++)
 	{
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
@@ -143,8 +140,8 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		return ENOMEM;
 	}
 
-	new_region->start_page = vaddr & PAGE_FRAME;
-	new_region->count_page = (memsize + vaddr % PAGE_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+	new_region->base_page_vaddr = vaddr & PAGE_FRAME;
+	new_region->page_nums = (memsize + vaddr % PAGE_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
 	new_region->permission = readable | writeable | executable;
 	new_region->next_region = NULL;
 
@@ -166,22 +163,22 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 int as_prepare_load(struct addrspace *as)
 {
-	struct region *regions = as->as_regions;
-	while (regions != NULL)
+	struct region *region = as->as_regions;
+	while (region)
 	{
-		regions->permission = regions->permission | PERMISSION_WRITE;
-		regions = regions->next_region;
+		region->permission = region->permission | PERMISSION_WRITE;
+		region = region->next_region;
 	}
 	return 0;
 }
 
 int as_complete_load(struct addrspace *as)
 {
-	struct region *regions = as->as_regions;
-	while (regions != NULL)
+	struct region *region = as->as_regions;
+	while (region)
 	{
-		regions->permission = regions->permission | PERMISSION_READ;
-		regions = regions->next_region;
+		region->permission = region->permission | PERMISSION_READ;
+		region = region->next_region;
 	}
 	return 0;
 }

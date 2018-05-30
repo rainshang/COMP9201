@@ -1,9 +1,19 @@
 --frame table
-    When we tracked the called path to attempt to get some idea of
-    how exactly page table is established we found kmalloc() calls
-    alloc_kpages() to get n free pages.  So we think, we can create
-    the frame table for phycial address and convert next n free
-    frames address to page address (vaddr) here.
+    Since we use kseg0 for kernel, so we divide kseg0 into 4K frames.
+    We save this division as frame table at the begining(bottom)
+    of Free RAM.
+
+    Free RAM locates fllowing OS/161 Kernel in kseg0.
+
+    Thus, the available memory now is RAM - OS/161 Kernel - Frame
+    Table.
+
+    Then we allocate twice size Page table following Frame Table,
+    that means after initialisation, the available memory now is
+    RAM - OS/161 Kernel - Frame Table - Page Table.
+
+    We save the size as the offset of frame table, for future
+    alloc_kpage.
 
 --hashed page table
     We create a hashed page table which size is twice of frame

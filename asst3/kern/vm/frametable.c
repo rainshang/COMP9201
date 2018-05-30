@@ -5,23 +5,65 @@
 #include <addrspace.h>
 #include <vm.h>
 
-/* Place your frametable data-structures here
- * You probably also want to write a frametable initialisation
- * function and call it from vm_bootstrap
- */
-
 struct frame_table_entry
 {
-	int isUsed;
-	int next_empty_entry;
+	unsigned char is_used;
+	size_t next_empty_frame_index;
 };
 
-paddr_t helper(unsigned int npages);
+static struct spinlock ft_lock = SPINLOCK_INITIALIZER;
+static struct frame_table_entry *frame_table = NULL;
+static size_t frame_nums;
 
-struct frame_table_entry *frame_table = 0;
-unsigned page_nums;
-unsigned first_empty_entry;
-static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static size_t current_empty_frame_index;
+
+static inline paddr_t get_frame_paddr(size_t index)
+{
+	return index * PAGE_SIZE;
+}
+
+struct page_table_entry *init_pagetable(size_t *page_nums)
+{
+	paddr_t top_of_ram = ram_getsize();
+	paddr_t ft_base = ram_getfirstfree();
+
+	// allocate space for frame table
+	frame_table = (struct frame_table_entry *)PADDR_TO_KVADDR(ft_base);
+	frame_nums = top_of_ram / PAGE_SIZE;
+
+	// calculate available frame after creating frame table
+	size_t ft_size = sizeof(struct frame_table_entry) * frame_nums;
+	current_empty_frame_index = (ft_base + ft_size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+	// allocate space for page table
+	struct page_table_entry *page_table = (struct page_table_entry *)PADDR_TO_KVADDR(get_frame_paddr(current_empty_frame_index));
+
+	// calculate available frame after creating page table
+	*page_nums = frame_nums * 2;
+	size_t pt_size = sizeof(struct page_table_entry) * *page_nums;
+	current_empty_frame_index += (pt_size + PAGE_SIZE - 1) / PAGE_SIZE;
+	if (current_empty_frame_index >= frame_nums)
+	{
+		return NULL;
+	}
+
+	for (size_t i = 0; i < frame_nums; ++i)
+	{
+		struct frame_table_entry *fte = &frame_table[i];
+
+		if (i < current_empty_frame_index)
+		{
+			fte->is_used = 1;
+		}
+		else
+		{
+			fte->is_used = 0;
+			fte->next_empty_frame_index = i + 1;
+		}
+	}
+
+	return page_table;
+}
 
 /* Note that this function returns a VIRTUAL address, not a physical
  * address
@@ -30,104 +72,58 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
  * frame table initialisation function, or check to see if the
  * frame table has been initialised and call ram_stealmem() otherwise.
  */
-void init_frametable(void)
-{
-	paddr_t top_of_ram = ram_getsize();
-	paddr_t bottom_of_ram = ram_getfirstfree();
-	paddr_t location = top_of_ram - (top_of_ram / PAGE_SIZE * sizeof(struct frame_table_entry));
-	frame_table = (struct frame_table_entry *)PADDR_TO_KVADDR(location);
-	page_nums = top_of_ram / PAGE_SIZE;
-	unsigned bot = bottom_of_ram / PAGE_SIZE;
-	unsigned top = location / PAGE_SIZE;
-
-	spinlock_acquire(&stealmem_lock);
-	for (unsigned i = 0; i < page_nums; i++)
-	{
-		if (i < bot || i > top)
-		{
-			frame_table[i].isUsed = 1;
-		}
-		else
-		{
-			frame_table[i].isUsed = 0;
-			if (i != page_nums - 1)
-			{
-				frame_table[i].next_empty_entry = i + 1;
-			}
-			else
-			{
-				frame_table[i].next_empty_entry = -1;
-			}
-		}
-	}
-	for (unsigned i = 0; i < page_nums; i++)
-	{
-		if (frame_table[i].isUsed == 0)
-		{
-			first_empty_entry = i;
-			break;
-		}
-	}
-	spinlock_release(&stealmem_lock);
-}
-
 vaddr_t alloc_kpages(unsigned int npages)
 {
-	paddr_t addr;
-	if (frame_table == 0)
+	paddr_t addr = 0;
+	spinlock_acquire(&ft_lock);
+	if (frame_table)
 	{
-		spinlock_acquire(&stealmem_lock);
-		addr = ram_stealmem(npages);
-		spinlock_release(&stealmem_lock);
+		if (npages == 1)
+		{
+			if (current_empty_frame_index >= frame_nums)
+			{
+				spinlock_release(&ft_lock);
+				kprintf("error frame number.\n");
+				return 0;
+			}
+			addr = get_frame_paddr(current_empty_frame_index);
+
+			struct frame_table_entry *fte = &frame_table[current_empty_frame_index];
+			fte->is_used = 1;
+			current_empty_frame_index = fte->next_empty_frame_index;
+		}
 	}
 	else
 	{
-		addr = helper(npages);
+		addr = ram_stealmem(npages);
 	}
+	spinlock_release(&ft_lock);
 
-	if (addr == 0)
+	if (addr)
+	{
+		return PADDR_TO_KVADDR(addr);
+	}
+	else
 	{
 		return 0;
 	}
-	return PADDR_TO_KVADDR(addr);
 }
 
-paddr_t helper(unsigned int npages)
+void free_kpages(vaddr_t vaddr)
 {
-	paddr_t addr = 0;
-	spinlock_acquire(&stealmem_lock);
-	if (npages == 1)
-	{
-		if (first_empty_entry >= page_nums)
-		{
-			spinlock_release(&stealmem_lock);
-			kprintf("error frame number.\n");
-			return 0;
-		}
-		addr = first_empty_entry * PAGE_SIZE;
-		frame_table[first_empty_entry].isUsed = 1;
-		first_empty_entry = frame_table[first_empty_entry].next_empty_entry;
-	}
-	spinlock_release(&stealmem_lock);
-	return addr;
-}
-
-void free_kpages(vaddr_t addr)
-{
-	paddr_t paddr = KVADDR_TO_PADDR(addr);
-	unsigned temp = paddr / PAGE_SIZE;
-	if (temp > page_nums)
+	paddr_t paddr = KVADDR_TO_PADDR(vaddr);
+	size_t frame_index = paddr / PAGE_SIZE;
+	if (frame_index >= frame_nums)
 	{
 		return;
 	}
-	if (frame_table[temp].isUsed == 0)
+	spinlock_acquire(&ft_lock);
+	struct frame_table_entry *fte = &frame_table[frame_index];
+	if (fte->is_used)
 	{
-		return;
+		fte->is_used = 0;
+		fte->next_empty_frame_index = current_empty_frame_index;
+		current_empty_frame_index = frame_index;
 	}
-	free_kpage(addr);
-	spinlock_acquire(&stealmem_lock);
-	frame_table[temp].isUsed = 0;
-	frame_table[temp].next_empty_entry = first_empty_entry;
-	first_empty_entry = temp;
-	spinlock_release(&stealmem_lock);
+	spinlock_release(&ft_lock);
 }
