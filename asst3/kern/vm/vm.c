@@ -241,6 +241,7 @@ void vm_destroy(struct addrspace *as)
 				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
 				if (next_pte->pid == as)
 				{
+					free_kpages(PADDR_TO_KVADDR(pte->frame_paddr & PAGE_FRAME));
 					init_pte(pte);
 				}
 				else
@@ -250,11 +251,13 @@ void vm_destroy(struct addrspace *as)
 					pte->frame_paddr = next_pte->frame_paddr;
 					pte->next_hash = next_pte->next_hash;
 
+					free_kpages(PADDR_TO_KVADDR(pte->frame_paddr & PAGE_FRAME));
 					init_pte(next_pte);
 				}
 			}
 			else
 			{
+				free_kpages(PADDR_TO_KVADDR(pte->frame_paddr & PAGE_FRAME));
 				init_pte(pte);
 			}
 		}
