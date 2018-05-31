@@ -77,7 +77,7 @@ static struct page_table_entry *lookup_pht(struct addrspace *as, vaddr_t vaddr)
 	return NULL;
 }
 
-static void update_tlb(vaddr_t faultvaddr, paddr_t *frame_paddr, struct region *region)
+static void update_tlb(vaddr_t faultvaddr, paddr_t *frame_paddr, int dirty_mask, struct region *region)
 {
 	int spl = splhigh();
 	uint32_t ehi = faultvaddr & TLBHI_VPAGE;
@@ -91,6 +91,7 @@ static void update_tlb(vaddr_t faultvaddr, paddr_t *frame_paddr, struct region *
 		}
 		*frame_paddr = elo;
 	}
+	elo |= dirty_mask;
 	tlb_random(ehi, elo);
 	splx(spl);
 }
@@ -177,7 +178,7 @@ int vm_fault(int faulttype, vaddr_t faultvaddr)
 
 	if (pte)
 	{
-		update_tlb(faultvaddr, &pte->frame_paddr, NULL);
+		update_tlb(faultvaddr, &pte->frame_paddr, as->dirty_mask, NULL);
 		return 0;
 	}
 	else
@@ -195,7 +196,7 @@ int vm_fault(int faulttype, vaddr_t faultvaddr)
 			return err;
 		}
 		bzero((void *)PADDR_TO_KVADDR(pte->frame_paddr), PAGE_SIZE);
-		update_tlb(faultvaddr, &pte->frame_paddr, region);
+		update_tlb(faultvaddr, &pte->frame_paddr, as->dirty_mask, region);
 		return 0;
 	}
 }

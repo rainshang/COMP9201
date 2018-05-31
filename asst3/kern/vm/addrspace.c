@@ -57,6 +57,7 @@ as_create(void)
 		return NULL;
 	}
 	as->as_regions = NULL;
+	as->dirty_mask = 0;
 	return as;
 }
 
@@ -67,6 +68,7 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 	{
 		return ENOMEM;
 	}
+	new->dirty_mask = old->dirty_mask;
 
 	struct region *old_region = old->as_regions;
 
@@ -152,7 +154,7 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	new_region->base_page_vaddr = vaddr & PAGE_FRAME;
 	new_region->page_nums = (memsize + vaddr % PAGE_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
-	new_region->old_permission = new_region->permission = readable | writeable | executable;
+	new_region->permission = readable | writeable | executable;
 	new_region->next_region = NULL;
 
 	if (as->as_regions)
@@ -173,25 +175,14 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 int as_prepare_load(struct addrspace *as)
 {
-	struct region *region = as->as_regions;
-	while (region)
-	{
-		region->old_permission = region->permission;
-		region->permission |= PERMISSION_READ | PERMISSION_WRITE;
-		region = region->next_region;
-	}
+	as->dirty_mask = TLBLO_DIRTY;
 	as_activate();
 	return 0;
 }
 
 int as_complete_load(struct addrspace *as)
 {
-	struct region *region = as->as_regions;
-	while (region)
-	{
-		region->permission = region->old_permission;
-		region = region->next_region;
-	}
+	as->dirty_mask = 0;
 	as_activate();
 	return 0;
 }

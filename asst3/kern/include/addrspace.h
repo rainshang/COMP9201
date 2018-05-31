@@ -49,7 +49,6 @@ struct region
 	vaddr_t base_page_vaddr; // grows up
 	size_t page_nums;
 	uint32_t permission; // compatible with the PF_R/PF_W/PF_X in elf.h
-  uint32_t old_permission;
 	struct region *next_region;
 };
 
@@ -65,6 +64,7 @@ struct addrspace
 	paddr_t as_stackpbase;
 #else
 	struct region *as_regions;
+	int dirty_mask;
 #endif
 };
 
