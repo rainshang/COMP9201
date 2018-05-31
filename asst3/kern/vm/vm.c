@@ -64,7 +64,7 @@ static struct page_table_entry *lookup_pht(struct addrspace *as, vaddr_t vaddr)
 		{
 			return pte;
 		}
-		else if (pte->next_hash) // hash collision solution
+		else if (pte->next_hash && pte->next_hash != hash) // hash collision solution
 		{
 			pte = &hashed_page_table[pte->next_hash];
 		}
@@ -118,24 +118,49 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 	uint32_t hash = hpt_hash(as, vaddr);
 	struct page_table_entry *pte = &hashed_page_table[hash];
 
-	if (pte->pid) // collision
+	while (pte->pid)
 	{
-		uint32_t di = 1;
-		struct page_table_entry *next_pte = pte;
-		while (next_pte->pid && di < page_nums)
+		if (pte->next_hash)
 		{
-			next_pte = &hashed_page_table[(hash + di) % page_nums];
-			++di;
-		}
-		if (next_pte->pid)
-		{
-			return ENOMEM;
+			if (pte->next_hash != hash)
+			{
+				pte = &hashed_page_table[pte->next_hash];
+				continue;
+			}
+			else
+			{
+				break;
+			}
 		}
 		else
 		{
-			pte->next_hash = (hash + di) % page_nums;
-			pte = next_pte;
+			uint32_t di = 0;
+			struct page_table_entry *next_pte;
+			do
+			{
+				++di;
+				if (hash + di == page_nums)
+				{
+					++di;
+				}
+				next_pte = &hashed_page_table[(hash + di) % page_nums];
+			} while (next_pte->pid && di < page_nums);
+
+			if (next_pte->pid)
+			{
+				return ENOMEM;
+			}
+			else
+			{
+				pte->next_hash = (hash + di) % page_nums;
+				pte = next_pte;
+			}
 		}
+	}
+
+	if (pte->pid)
+	{
+		return ENOMEM;
 	}
 
 	vaddr_t new_frame_vaddr = alloc_kpages(1);
@@ -146,6 +171,7 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 	pte->pid = as;
 	pte->page_vaddr = get_page_vaddr(vaddr);
 	pte->frame_paddr = KVADDR_TO_PADDR(new_frame_vaddr);
+	pte->next_hash = 0;
 	*ret_pte = pte;
 	return 0;
 }
@@ -205,29 +231,21 @@ int vm_copy(struct addrspace *old, struct addrspace *new)
 {
 	spinlock_acquire(&hpt_lock);
 
-	struct region *old_region = old->as_regions;
-	while (old_region)
+	for (size_t i = 0; i < page_nums; ++i)
 	{
-		vaddr_t page_vaddr = old_region->base_page_vaddr;
-		for (size_t i = 0; i < old_region->page_nums; ++i)
+		struct page_table_entry *old_pte = &hashed_page_table[i];
+		if (old_pte->pid == old)
 		{
-			page_vaddr += PAGE_SIZE * i;
-
-			struct page_table_entry *old_pte = lookup_pht(old, page_vaddr);
-			if (old_pte)
+			struct page_table_entry *new_pte;
+			int err = insert_pht(new, old_pte->page_vaddr, &new_pte);
+			if (err)
 			{
-				struct page_table_entry *new_pte;
-				int err = insert_pht(new, page_vaddr, &new_pte);
-				if (err)
-				{
-					spinlock_release(&hpt_lock);
-					return err;
-				}
-				memcpy((void *)PADDR_TO_KVADDR(new_pte->frame_paddr), (const void *)PADDR_TO_KVADDR(old_pte->frame_paddr & PAGE_FRAME), PAGE_SIZE);
-				new_pte->frame_paddr |= (old_pte->frame_paddr & ~PAGE_FRAME);
+				spinlock_release(&hpt_lock);
+				return err;
 			}
+			memcpy((void *)PADDR_TO_KVADDR(new_pte->frame_paddr), (const void *)PADDR_TO_KVADDR(old_pte->frame_paddr & PAGE_FRAME), PAGE_SIZE);
+			new_pte->frame_paddr |= (old_pte->frame_paddr & ~PAGE_FRAME);
 		}
-		old_region = old_region->next_region;
 	}
 
 	spinlock_release(&hpt_lock);
@@ -246,7 +264,7 @@ void vm_destroy(struct addrspace *as)
 			if (pte->next_hash)
 			{
 				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
-				if (next_pte->pid == as)
+				if (!next_pte->pid || next_pte->pid == as)
 				{
 					free_kpages(PADDR_TO_KVADDR(pte->frame_paddr & PAGE_FRAME));
 					init_pte(pte);
@@ -266,6 +284,17 @@ void vm_destroy(struct addrspace *as)
 			{
 				free_kpages(PADDR_TO_KVADDR(pte->frame_paddr & PAGE_FRAME));
 				init_pte(pte);
+			}
+		}
+		else
+		{
+			if (pte->next_hash)
+			{
+				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
+				if (next_pte->pid == as)
+				{
+					pte->next_hash = 0;
+				}
 			}
 		}
 	}
