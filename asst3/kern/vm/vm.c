@@ -18,7 +18,7 @@ static void init_pte(struct page_table_entry *pte)
 	pte->pid = NULL;
 	pte->page_vaddr = 0;
 	pte->frame_paddr = 0;
-	pte->next_hash = 0;
+	pte->next_hash = page_nums;
 }
 
 static void init_page_table()
@@ -64,7 +64,7 @@ static struct page_table_entry *lookup_pht(struct addrspace *as, vaddr_t vaddr)
 		{
 			return pte;
 		}
-		else if (pte->next_hash && pte->next_hash != hash) // hash collision solution
+		else if (pte->next_hash != page_nums && pte->next_hash != hash) // hash collision solution
 		{
 			pte = &hashed_page_table[pte->next_hash];
 		}
@@ -120,7 +120,7 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 
 	while (pte->pid)
 	{
-		if (pte->next_hash)
+		if (pte->next_hash != page_nums)
 		{
 			if (pte->next_hash != hash)
 			{
@@ -139,10 +139,6 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 			do
 			{
 				++di;
-				if (hash + di == page_nums)
-				{
-					++di;
-				}
 				next_pte = &hashed_page_table[(hash + di) % page_nums];
 			} while (next_pte->pid && di < page_nums);
 
@@ -171,7 +167,7 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 	pte->pid = as;
 	pte->page_vaddr = get_page_vaddr(vaddr);
 	pte->frame_paddr = KVADDR_TO_PADDR(new_frame_vaddr);
-	pte->next_hash = 0;
+	pte->next_hash = page_nums;
 	*ret_pte = pte;
 	return 0;
 }
@@ -261,7 +257,7 @@ void vm_destroy(struct addrspace *as)
 		struct page_table_entry *pte = &hashed_page_table[i];
 		if (pte->pid == as)
 		{
-			if (pte->next_hash)
+			if (pte->next_hash != page_nums)
 			{
 				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
 				if (!next_pte->pid || next_pte->pid == as)
@@ -288,12 +284,12 @@ void vm_destroy(struct addrspace *as)
 		}
 		else
 		{
-			if (pte->next_hash)
+			if (pte->next_hash != page_nums)
 			{
 				struct page_table_entry *next_pte = &hashed_page_table[pte->next_hash];
 				if (next_pte->pid == as)
 				{
-					pte->next_hash = 0;
+					pte->next_hash = page_nums;
 				}
 			}
 		}
