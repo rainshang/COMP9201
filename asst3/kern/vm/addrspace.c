@@ -152,7 +152,7 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	new_region->base_page_vaddr = vaddr & PAGE_FRAME;
 	new_region->page_nums = (memsize + vaddr % PAGE_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
-	new_region->permission = readable | writeable | executable;
+	new_region->old_permission = new_region->permission = readable | writeable | executable;
 	new_region->next_region = NULL;
 
 	if (as->as_regions)
@@ -177,9 +177,10 @@ int as_prepare_load(struct addrspace *as)
 	while (region)
 	{
 		region->old_permission = region->permission;
-		region->permission = PERMISSION_READ | PERMISSION_WRITE;
+		region->permission |= PERMISSION_READ | PERMISSION_WRITE;
 		region = region->next_region;
 	}
+	as_activate();
 	return 0;
 }
 
@@ -191,11 +192,11 @@ int as_complete_load(struct addrspace *as)
 		region->permission = region->old_permission;
 		region = region->next_region;
 	}
+	as_activate();
 	return 0;
 }
 
 #define USER_STACKPAGES 16
-
 int as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	*stackptr = USERSTACK;

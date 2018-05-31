@@ -35,7 +35,7 @@ struct page_table_entry
 	struct addrspace *pid;
 	vaddr_t page_vaddr;
 	paddr_t frame_paddr;
-	unsigned next_hash;
+	uint32_t next_hash;
 };
 
 #include <machine/vm.h>

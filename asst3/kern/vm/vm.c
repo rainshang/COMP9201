@@ -117,30 +117,36 @@ static int insert_pht(struct addrspace *as, vaddr_t vaddr, struct page_table_ent
 	uint32_t hash = hpt_hash(as, vaddr);
 	struct page_table_entry *pte = &hashed_page_table[hash];
 
-	uint32_t di = 1;
-	while (pte->pid && di < page_nums)
+	if (pte->pid) // collision
 	{
-		pte = &hashed_page_table[(hash + di) % page_nums];
-		++di;
-	}
-
-	if (pte->pid)
-	{
-		return ENOMEM;
-	}
-	else
-	{
-		vaddr_t new_frame_vaddr = alloc_kpages(1);
-		if (!new_frame_vaddr)
+		uint32_t di = 1;
+		struct page_table_entry *next_pte = pte;
+		while (next_pte->pid && di < page_nums)
+		{
+			next_pte = &hashed_page_table[(hash + di) % page_nums];
+			++di;
+		}
+		if (next_pte->pid)
 		{
 			return ENOMEM;
 		}
-		pte->pid = as;
-		pte->page_vaddr = get_page_vaddr(vaddr);
-		pte->frame_paddr = KVADDR_TO_PADDR(new_frame_vaddr);
-		*ret_pte = pte;
-		return 0;
+		else
+		{
+			pte->next_hash = (hash + di) % page_nums;
+			pte = next_pte;
+		}
 	}
+
+	vaddr_t new_frame_vaddr = alloc_kpages(1);
+	if (!new_frame_vaddr)
+	{
+		return ENOMEM;
+	}
+	pte->pid = as;
+	pte->page_vaddr = get_page_vaddr(vaddr);
+	pte->frame_paddr = KVADDR_TO_PADDR(new_frame_vaddr);
+	*ret_pte = pte;
+	return 0;
 }
 
 int vm_fault(int faulttype, vaddr_t faultvaddr)
@@ -155,12 +161,12 @@ int vm_fault(int faulttype, vaddr_t faultvaddr)
 	default:
 		return EINVAL;
 	}
-	if (curproc == NULL)
+	if (!curproc)
 	{
 		return EFAULT;
 	}
 	struct addrspace *as = proc_getas();
-	if (as == NULL)
+	if (!as)
 	{
 		return EFAULT;
 	}
