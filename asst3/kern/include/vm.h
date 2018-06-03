@@ -35,7 +35,7 @@ struct page_table_entry
 	struct addrspace *pid;
 	vaddr_t page_vaddr;
 	paddr_t frame_paddr;
-	uint32_t next_hash;
+	struct page_table_entry *next;
 };
 
 #include <machine/vm.h>
@@ -53,7 +53,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(unsigned npages);
 void free_kpages(vaddr_t vaddr);
-struct page_table_entry *init_pagetable(size_t *page_nums);
+struct page_table_entry **init_pagetable(size_t *page_nums);
 int vm_copy(struct addrspace *old, struct addrspace *new);
 void vm_destroy(struct addrspace *as);
 /* TLB shootdown handling called from interprocessor_interrupt */

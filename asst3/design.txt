@@ -25,16 +25,13 @@
 
     if vacant, put it here.
 
-    if not, we use h = (h + di) % size to generate a new index, di
-    increases in [1, size-1].
-        If possible, save the index as a link.  Otherwise, it means
-        there if no space.
+    if not, we iterate the linked list and append the new entry to the last position.
 
     When we want to find a PTE in the HPT, we use the same hash
     method to get the index, if the pte at this position mathes the
     pid, cool
 
-    not, we check the next link of this pte to match, until match
+    If not, we also iterate the linked list to find the specific one, until match
     or not found
 
     Release a page.
@@ -68,5 +65,11 @@
         the statck pointer points to its bottom while others point
         to top. Thus, we need a as_define_stack() func to distinguish.
 
-        We define 'region' as a linklist, to present all the specific
-        regions in this process space.
+        We define 'region' as a linklist, including base address, size, old permission and current permission,
+        to present all the specific regions in this process space.
+    --as_activate and as_deactivate will flush TLB.
+    --as_copy and as_destroy
+        As fork will call as_copy, we copy all regions of parent process to the child process,
+        then we create all page table entries of parent process to the child process and copy the contents from the frame address.
+        as_destroy will delete the relative process' page table entries and then delete the regions.
+    --as_prepare_load and as_complete_load will modify the region's dirty_mask for the tlb update.

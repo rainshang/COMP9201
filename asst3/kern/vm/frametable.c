@@ -22,7 +22,7 @@ static inline paddr_t get_frame_paddr(size_t index)
 	return index * PAGE_SIZE;
 }
 
-struct page_table_entry *init_pagetable(size_t *page_nums)
+struct page_table_entry **init_pagetable(size_t *page_nums)
 {
 	paddr_t top_of_ram = ram_getsize();
 	paddr_t ft_base = ram_getfirstfree();
@@ -36,11 +36,11 @@ struct page_table_entry *init_pagetable(size_t *page_nums)
 	current_empty_frame_index = (ft_base + ft_size + PAGE_SIZE - 1) / PAGE_SIZE;
 
 	// allocate space for page table
-	struct page_table_entry *page_table = (struct page_table_entry *)PADDR_TO_KVADDR(get_frame_paddr(current_empty_frame_index));
+	struct page_table_entry **page_table = (struct page_table_entry **)PADDR_TO_KVADDR(get_frame_paddr(current_empty_frame_index));
 
 	// calculate available frame after creating page table
 	*page_nums = frame_nums * 2;
-	size_t pt_size = sizeof(struct page_table_entry) * *page_nums;
+	size_t pt_size = sizeof(struct page_table_entry *) * *page_nums;
 	current_empty_frame_index += (pt_size + PAGE_SIZE - 1) / PAGE_SIZE;
 	if (current_empty_frame_index >= frame_nums)
 	{
